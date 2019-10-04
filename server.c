@@ -22,7 +22,7 @@
 #define MODE_E 0
 #define MODE_D 1
 
-int handle_client_encrypt(int client_socket);
+int handle_client_encrypt(int decrypt_socket);
 int handle_client_decrypt(int client_socket);
 
 int flush_buffer(int socket, char *buffer, int ntowrite);
@@ -167,6 +167,7 @@ int main(int argc, char **argv) {
 			}
 			else {
 				handle_client_decrypt(client_socket);
+
 			}
 
 			close(client_socket);
@@ -179,10 +180,149 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-int handle_client_encrypt(int client_socket) {
+int handle_client_encrypt(int decrypt_socket) {
+
+	//use getaddrinfo 
+	
+	//socket creation
+
+	// Connecting to the client
+	result = connect(decrypt_socket, result_list->ai_addr, result_list->ai_addrlen);
+	if(result == -1) {
+		perror("Cannot connect to the server");
+
+		return 0;
+	}
+
+
+
+
+
+	//wait for https handshake to complete by calling tls_session_passive on 
+	// Prepare the TLS library
+
+	init_openssl_library();
+	tls_context = get_tls_context();
+
+	// Read from client and echo its messages
+	int encrypt_socket;
+	struct sockaddr_storage encrypt_socket_address;
+	socklen_t encrypt_socket_size;
+
+	encrypt_socket_size = sizeof(struct sockaddr_storage);
+
+	SSL *ssl = tls_session_active(encrypt_socket, tls_context);
+	forward_connection(encrypt_socket, ssl, decrypt_socket)
+
+	// while(1) {
+	// 	encrypt_socket = accept(listen_socket, (struct sockaddr *) &encrypt_socket_address, &encrypt_socket_size);
+
+	// 	if(encrypt_socket == -1) {
+	// 		perror("Cannot accept client");
+
+	// 		return 0;
+	// 	}
+
+	// 	// Read from client and echo its messages
+	// 	print_address_information("Connection from client from [%s] port [%s]\n", (struct sockaddr *) &encrypt_socket_address, encrypt_socket_size);
+
+	// 	int pid = fork();
+
+	// 	if(pid != 0) {
+	// 		// Server executes this
+	// 		close(encrypt_socket);
+	// 	}
+	// 	else {
+	// 		// Client executes this
+	// 		SSL *ssl = tls_session_passive(encrypt_socket, tls_context);	//create ssl box
+	// 		///tls_session_passive is wrapper function
+	// 		//pass client socket and tls context to box.
+
+	// 		// Client executes this
+	// 		handle_client(encrypt_socket, ssl);
+
+	// 		forward_connection(encrypt_socket, ssl, decrypt_socket);
+	// 		SSL_shutdown(ssl);
+	// 		SSL_free(ssl);	//free memory on exit111
+	// 		close(encrypt_socket);
+
+	// 		// This call is important
+	// 		exit(0);
+	// 	}
+	// }
+
+	
+
+	return 1;
+
+
+
+
 }
 
 int handle_client_decrypt(int client_socket) {
+
+	// Connecting to the client
+	result = connect(client_socket, result_list->ai_addr, result_list->ai_addrlen);
+	if(result == -1) {
+		perror("Cannot connect to the server");
+
+		return 0;
+	}
+
+	//wait for https handshake to complete by calling tls_session_passive on 
+	// Prepare the TLS library
+
+	init_openssl_library();
+	tls_context = get_tls_context();
+
+	// Read from client and echo its messages
+	int decrypt_socket;
+	struct sockaddr_storage decrypt_socket_address;
+	socklen_t decrypt_socket_size;
+
+	decrypt_socket_size = sizeof(struct sockaddr_storage);
+
+	while(1) {
+		decrypt_socket = accept(listen_socket, (struct sockaddr *) &decrypt_socket_address, &decrypt_socket_size);
+
+		if(decrypt_socket == -1) {
+			perror("Cannot accept client");
+
+			return 0;
+		}
+
+		// Read from client and echo its messages
+		print_address_information("Connection from client from [%s] port [%s]\n", (struct sockaddr *) &decrypt_socket_address, decrypt_socket_size);
+
+		int pid = fork();
+
+		if(pid != 0) {
+			// Server executes this
+			close(decrypt_socket);
+		}
+		else {
+			// Client executes this
+			SSL *ssl = tls_session_passive(decrypt_socket, tls_context);	//create ssl box
+			///tls_session_passive is wrapper function
+			//pass client socket and tls context to box.
+
+			// Client executes this
+			handle_client(decrypt_socket, ssl);
+
+			forward_connection(decrypt_socket, ssl, client_socket);
+			SSL_shutdown(ssl);
+			SSL_free(ssl);	//free memory on exit111
+			close(decrypt_socket);
+
+			// This call is important
+			exit(0);
+		}
+	}
+
+	
+
+	return 1;
 }
 
 int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected_socket) {
