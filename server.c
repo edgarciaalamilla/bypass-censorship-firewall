@@ -43,7 +43,6 @@ int main(int argc, char **argv) {
 	int result;
 
 	// Argument parsing
-
 	if(argc < 4) {
 		fprintf(stderr, "Usage: server [E|D] <local_port> <proxy_host> <proxy_port>\n");
 
@@ -53,21 +52,22 @@ int main(int argc, char **argv) {
 	if(strcmp(argv[1], "E") == 0) {
 		mode = MODE_E;
 	}
+
 	else if(strcmp(argv[1], "D") == 0) {
 		mode = MODE_D;
 	}
+
 	else {
 		fprintf(stderr, "Usage: server [E|D] <local_port> <proxy_host> <proxy_port>\n");
-
 		return -1;
 	}
-
+	//local port is port that receives stuff
+	//destination port is port to send stuff to
 	local_port = argv[2];
 	destination_host = argv[3];
 	destination_port = argv[4];
 
 	// Using getaddrinfo to obtain the first address to bind to
-
 	struct addrinfo result_hints;
 	struct addrinfo *result_list;
 
@@ -77,6 +77,7 @@ int main(int argc, char **argv) {
 	result_hints.ai_socktype = SOCK_STREAM;
 	result_hints.ai_flags = AI_PASSIVE;
 
+	//for connections, use local_port
 	result = getaddrinfo(NULL, local_port, &result_hints, &result_list);
 
 	if(result != 0) {
@@ -85,13 +86,13 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
+	//this is c in Decrypt repeater and a in encrypt repeater
 	// Listening socket creation
-
 	int listen_socket;
 
 	for(struct addrinfo *result_curr = result_list; result_curr != NULL; result_curr = result_curr->ai_next) {
+		
 		// Listening socket creation
-
 		listen_socket = socket(result_curr->ai_family, result_curr->ai_socktype, result_curr->ai_protocol);
 
 		if(listen_socket == -1) {
@@ -99,7 +100,6 @@ int main(int argc, char **argv) {
 		}
 
 		// Binding to a local address/port
-
 		result = bind(listen_socket, result_curr->ai_addr, result_curr->ai_addrlen);
 
 		if(result == -1) {
@@ -120,7 +120,7 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	// Listen for connections
+	// Listen for connections to a/c
 
 	result = listen(listen_socket, 5);
 
@@ -180,152 +180,200 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-int handle_client_encrypt(int decrypt_socket) {
+int handle_client_encrypt(int client_socket) {
 
-	//use getaddrinfo 
-	
-	//socket creation
+	//create connection to proxy's host and port
+	//is it destination and port?
+	struct addrinfo result_hints;
+	struct addrinfo *result_list;
+	memset(&result_hints, 0, sizeof(struct addrinfo));
+	result_hints.ai_family = AF_UNSPEC;
+	result_hints.ai_socktype = SOCK_STREAM;
+	//getaddrinfo for destination hostand destination port?
+	result = getaddrinfo(destination_host, destination_port, &result_hints, &result_list);
 
-	// Connecting to the client
-	result = connect(decrypt_socket, result_list->ai_addr, result_list->ai_addrlen);
-	if(result == -1) {
-		perror("Cannot connect to the server");
+	if(result != 0) {
+		perror("Cannot obtain address");
 
 		return 0;
 	}
 
+	if(result_list == NULL) {
+		fprintf(stderr, "No address found");
+
+		return 0;
+	}
+
+	//create a remote socket
+	int remote_socket;
+	remote_socket = socket(result_list->ai_family, result_list->ai_socktype, result_list->ai_protocol);
+	if(remote_socket == -1) {
+		perror("It wasn't possible to create the socket");
+
+		return 0;
+	}
+	//connect to remote socket
+	result = connect(remote_socket, result_list->ai_addr, result_list->ai_addrlen);
+	if(result == -1) {
+		perror("Cannot connect to the server");
+		return 0;
+	}
+
+	//start https handshake 
+	SSL *remote_ssl = tls_session_active(remote_socket, tls_context);
+
+	forward_connection(remote_socket, remote_ssl,client_socket);
+	SSL_shutdown(remote_ssl);
+	SSL_free(remote_ssl);
+	close(client_socket);
+	close(remote_socket);
 
 
-
-
-	//wait for https handshake to complete by calling tls_session_passive on 
-	// Prepare the TLS library
-
-	init_openssl_library();
-	tls_context = get_tls_context();
-
-	// Read from client and echo its messages
-	int encrypt_socket;
-	struct sockaddr_storage encrypt_socket_address;
-	socklen_t encrypt_socket_size;
-
-	encrypt_socket_size = sizeof(struct sockaddr_storage);
-
-	SSL *ssl = tls_session_active(encrypt_socket, tls_context);
-	forward_connection(encrypt_socket, ssl, decrypt_socket)
-
-	// while(1) {
-	// 	encrypt_socket = accept(listen_socket, (struct sockaddr *) &encrypt_socket_address, &encrypt_socket_size);
-
-	// 	if(encrypt_socket == -1) {
-	// 		perror("Cannot accept client");
-
-	// 		return 0;
-	// 	}
-
-	// 	// Read from client and echo its messages
-	// 	print_address_information("Connection from client from [%s] port [%s]\n", (struct sockaddr *) &encrypt_socket_address, encrypt_socket_size);
-
-	// 	int pid = fork();
-
-	// 	if(pid != 0) {
-	// 		// Server executes this
-	// 		close(encrypt_socket);
-	// 	}
-	// 	else {
-	// 		// Client executes this
-	// 		SSL *ssl = tls_session_passive(encrypt_socket, tls_context);	//create ssl box
-	// 		///tls_session_passive is wrapper function
-	// 		//pass client socket and tls context to box.
-
-	// 		// Client executes this
-	// 		handle_client(encrypt_socket, ssl);
-
-	// 		forward_connection(encrypt_socket, ssl, decrypt_socket);
-	// 		SSL_shutdown(ssl);
-	// 		SSL_free(ssl);	//free memory on exit111
-	// 		close(encrypt_socket);
-
-	// 		// This call is important
-	// 		exit(0);
-	// 	}
-	// }
-
-	
 
 	return 1;
 
-
-
-
 }
 
+//localport will be 9000 for decrypt
+//will create connection to http proxy
 int handle_client_decrypt(int client_socket) {
 
-	// Connecting to the client
-	result = connect(client_socket, result_list->ai_addr, result_list->ai_addrlen);
+	//create connection to proxy's host and port
+	//is it destination and port?
+	struct addrinfo result_hints;
+	struct addrinfo *result_list;
+	memset(&result_hints, 0, sizeof(struct addrinfo));
+	result_hints.ai_family = AF_UNSPEC;
+	result_hints.ai_socktype = SOCK_STREAM;
+	//getaddrinfo for destination hostand destination port?
+	result = getaddrinfo(destination_host, destination_port, &result_hints, &result_list);
+
+	if(result != 0) {
+		perror("Cannot obtain address");
+
+		return 0;
+	}
+
+	if(result_list == NULL) {
+		fprintf(stderr, "No address found");
+
+		return 0;
+	}
+
+	//create a remote socket
+	int remote_socket;
+	remote_socket = socket(result_list->ai_family, result_list->ai_socktype, result_list->ai_protocol);
+	if(remote_socket == -1) {
+		perror("It wasn't possible to create the socket");
+
+		return 0;
+	}
+	//connect to remote socket
+	result = connect(remote_socket, result_list->ai_addr, result_list->ai_addrlen);
 	if(result == -1) {
 		perror("Cannot connect to the server");
 
 		return 0;
 	}
 
-	//wait for https handshake to complete by calling tls_session_passive on 
-	// Prepare the TLS library
+	//wait for https handshake to complete by calling tls_session_passive() on c socket (localport)
+	int pid = fork();
 
-	init_openssl_library();
-	tls_context = get_tls_context();
-
-	// Read from client and echo its messages
-	int decrypt_socket;
-	struct sockaddr_storage decrypt_socket_address;
-	socklen_t decrypt_socket_size;
-
-	decrypt_socket_size = sizeof(struct sockaddr_storage);
-
-	while(1) {
-		decrypt_socket = accept(listen_socket, (struct sockaddr *) &decrypt_socket_address, &decrypt_socket_size);
-
-		if(decrypt_socket == -1) {
-			perror("Cannot accept client");
-
-			return 0;
-		}
-
-		// Read from client and echo its messages
-		print_address_information("Connection from client from [%s] port [%s]\n", (struct sockaddr *) &decrypt_socket_address, decrypt_socket_size);
-
-		int pid = fork();
-
-		if(pid != 0) {
-			// Server executes this
-			close(decrypt_socket);
-		}
-		else {
-			// Client executes this
-			SSL *ssl = tls_session_passive(decrypt_socket, tls_context);	//create ssl box
-			///tls_session_passive is wrapper function
-			//pass client socket and tls context to box.
-
-			// Client executes this
-			handle_client(decrypt_socket, ssl);
-
-			forward_connection(decrypt_socket, ssl, client_socket);
-			SSL_shutdown(ssl);
-			SSL_free(ssl);	//free memory on exit111
-			close(decrypt_socket);
-
-			// This call is important
-			exit(0);
-		}
+	if(pid != 0) {
+		//close client_socket?
+		close(client_socket);
 	}
+	else {
 
-	
+		SSL *ssl = tls_session_passive(client_socket, tls_context);	//create ssl box
+		///tls_session_passive is wrapper function
+		//pass client socket and tls context to box.
 
+		// Client executes this
+		handle_client(client_socket, ssl);
+
+		
+		forward_connection(client_socket, ssl, destination_host);
+		SSL_shutdown(ssl);
+		SSL_free(ssl);	//free memory on exit111
+		close(client_socket);
+
+		// This call is important
+		exit(0);
+	}
 	return 1;
 }
 
+//protected is remote, client is unprotected
 int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected_socket) {
+
+	//use select() to forward requests between sockets involved in "E" or "D".
+	//add protected socket and unprotected socket into select() call.
+	//if protected socket is ready for reading use sslread() to read into buffer,
+	//forward to unprotected socket using write();
+	int result;
+	fd_set descriptor_set;
+
+	while(1){
+		FD_ZERO(&descriptor_set);
+		FD_SET(0, &descriptor_set);
+
+		//not sure if should be protected_socket or unprotected_socket
+		FD_SET(protected_socket, &descriptor_set);
+
+		//how
+		result = select(MAX(0,protected_socket) + 1, &descriptor_set, NULL, NULL, 0);
+		
+		if(result == -1) {
+			perror("select");
+
+			continue;
+		}
+
+		if(FD_ISSET(0, &descriptor_set)) {
+			fgets(buffer, BUFFER_SIZE, stdin);
+
+			if(strcmp(buffer, "exit") == 0) {
+				break;
+			}
+
+			flush_buffer(remote_socket, buffer, strlen(buffer));
+		}
+
+		//not sure here 
+		if(FD_ISSET(protected_socket, &descriptor_set)) {
+			int nread = SSL_read(protected_socket, buffer, BUFFER_SIZE - 1);
+
+			if(nread == 0) {
+				break;
+			}
+
+			buffer[nread] = '\0';
+			//write to unprotected_socket here instead of printing.
+			printf("%s", buffer);
+		}
+
+		//not really sure here
+		if(FD_ISSET(unprotected_socket, &descriptor_set)) {
+			int nread = SSL_read(unprotected_socket, buffer, BUFFER_SIZE - 1);
+
+			if(nread == 0) {
+				break;
+			}
+
+			buffer[nread] = '\0';
+			//write to unprotected_socket here instead of printing.
+			printf("%s", buffer);
+		}
+
+
+
+
+
+
+
+	}
+	return 1;
 }
 
 void print_address_information(char *template, struct sockaddr *address, int address_size) {

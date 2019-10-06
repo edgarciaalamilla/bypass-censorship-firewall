@@ -190,29 +190,6 @@ int create_client(char *destination, char *port) {
 
 		return -1;
 	}
-	// 	// Prepare the TLS library
-
-	// init_openssl_library();
-	// SSL_CTX *tls_context = get_tls_context_client();	//server needs certificate, client does not111
-	// //server sends certificate, client sends key using certificate, server decrypts to get key, then
-	// //client and server can use key negotiated by client
-
-	// //load root CA public key, to verify ca
-	// //client needs to load less information than the server
-
-	// SSL *remote_ssl = tls_session_active(remote_socket, tls_context);
-	// //client creates an encrypting box that is funneling through channel111
-	// //operating system creates tcp packdets that are controlled
-	
-
-	// char buffer[1024];
-
-	// while(1) {
-	// 	printf("Type your message to the server: ");
-	// 	fgets(buffer, BUFFER_SIZE, stdin);
-
-	// 	flush_buffer(remote_socket, remote_ssl, buffer, strlen(buffer) + 1);
-	// }
 
 	return 0;
 
