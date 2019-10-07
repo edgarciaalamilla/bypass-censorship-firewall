@@ -181,54 +181,19 @@ int main(int argc, char **argv) {
 }
 
 int handle_client_encrypt(int client_socket) {
-
-	//create connection to proxy's host and port
-	//is it destination and port?
-	struct addrinfo result_hints;
-	struct addrinfo *result_list;
-	memset(&result_hints, 0, sizeof(struct addrinfo));
-	result_hints.ai_family = AF_UNSPEC;
-	result_hints.ai_socktype = SOCK_STREAM;
-	//getaddrinfo for destination hostand destination port?
-	result = getaddrinfo(destination_host, destination_port, &result_hints, &result_list);
-
-	if(result != 0) {
-		perror("Cannot obtain address");
-
-		return 0;
-	}
-
-	if(result_list == NULL) {
-		fprintf(stderr, "No address found");
-
-		return 0;
-	}
-
-	//create a remote socket
-	int remote_socket;
-	remote_socket = socket(result_list->ai_family, result_list->ai_socktype, result_list->ai_protocol);
-	if(remote_socket == -1) {
-		perror("It wasn't possible to create the socket");
-
-		return 0;
-	}
-	//connect to remote socket
-	result = connect(remote_socket, result_list->ai_addr, result_list->ai_addrlen);
-	if(result == -1) {
-		perror("Cannot connect to the server");
-		return 0;
-	}
+	
+	int remote_socket = create_client(destination_host, destination_port);
 
 	//start https handshake 
 	SSL *remote_ssl = tls_session_active(remote_socket, tls_context);
 
-	forward_connection(remote_socket, remote_ssl,client_socket);
+	//should it be forward_connection(destination_host, ssl, client_socket)?
+	//determine which socket is protected, unprotected
+	forward_connection(client_socket, remote_ssl,remote_socket);
 	SSL_shutdown(remote_ssl);
 	SSL_free(remote_ssl);
 	close(client_socket);
 	close(remote_socket);
-
-
 
 	return 1;
 
@@ -238,73 +203,36 @@ int handle_client_encrypt(int client_socket) {
 //will create connection to http proxy
 int handle_client_decrypt(int client_socket) {
 
-	//create connection to proxy's host and port
-	//is it destination and port?
-	struct addrinfo result_hints;
-	struct addrinfo *result_list;
-	memset(&result_hints, 0, sizeof(struct addrinfo));
-	result_hints.ai_family = AF_UNSPEC;
-	result_hints.ai_socktype = SOCK_STREAM;
-	//getaddrinfo for destination hostand destination port?
-	result = getaddrinfo(destination_host, destination_port, &result_hints, &result_list);
-
-	if(result != 0) {
-		perror("Cannot obtain address");
-
-		return 0;
-	}
-
-	if(result_list == NULL) {
-		fprintf(stderr, "No address found");
-
-		return 0;
-	}
-
-	//create a remote socket
-	int remote_socket;
-	remote_socket = socket(result_list->ai_family, result_list->ai_socktype, result_list->ai_protocol);
-	if(remote_socket == -1) {
-		perror("It wasn't possible to create the socket");
-
-		return 0;
-	}
-	//connect to remote socket
-	result = connect(remote_socket, result_list->ai_addr, result_list->ai_addrlen);
-	if(result == -1) {
-		perror("Cannot connect to the server");
-
-		return 0;
-	}
+	int remote_socket = create_client(destination_host, destination_port);
 
 	//wait for https handshake to complete by calling tls_session_passive() on c socket (localport)
 	int pid = fork();
 
 	if(pid != 0) {
-		//close client_socket?
+		//close client_socket
 		close(client_socket);
 	}
+
 	else {
 
 		SSL *ssl = tls_session_passive(client_socket, tls_context);	//create ssl box
-		///tls_session_passive is wrapper function
 		//pass client socket and tls context to box.
 
 		// Client executes this
 		handle_client(client_socket, ssl);
 
-		
-		forward_connection(client_socket, ssl, destination_host);
+		forward_connection(client_socket, ssl, remote_socket);
 		SSL_shutdown(ssl);
-		SSL_free(ssl);	//free memory on exit111
+		SSL_free(ssl);	//free memory on exit
 		close(client_socket);
+		close(remote_socket);
 
-		// This call is important
 		exit(0);
 	}
 	return 1;
 }
 
-//protected is remote, client is unprotected
+//protected is client, unprotected is destination
 int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected_socket) {
 
 	//use select() to forward requests between sockets involved in "E" or "D".
@@ -321,12 +249,10 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 		//not sure if should be protected_socket or unprotected_socket
 		FD_SET(protected_socket, &descriptor_set);
 
-		//how
 		result = select(MAX(0,protected_socket) + 1, &descriptor_set, NULL, NULL, 0);
 		
 		if(result == -1) {
 			perror("select");
-
 			continue;
 		}
 
