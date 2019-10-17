@@ -176,6 +176,11 @@ int handle_client_encrypt(int client_socket) {
 		return 0;
 	}
 
+	if((result = SSL_CTX_load_verify_locations(tls_context, SERV_CERTIFICATE, NULL)) == 0){
+		perror("SSL");
+		return 0;
+	}
+
 	if(SSL_get_peer_certificate(ssl) == NULL){
 		perror("SSL_get_peer_certificate");
 		return 0;
