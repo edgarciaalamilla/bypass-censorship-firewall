@@ -163,30 +163,39 @@ int main(int argc, char **argv) {
 }
 
 int handle_client_encrypt(int client_socket) {
-	
-	int remote_socket = create_client(destination_host, destination_port);
 
-	SSL *remote_ssl = tls_session_active(remote_socket, tls_context);
+	int remote_socket;
+	SSL *ssl;
+	int result;
 
-	// if(!SSL_CTX_load_verify_locations(tls_context, SERV_CERTIFICATE, NULL)){
-	// 	perror("SSL");
-	// 	return 0;
-	// }
+	if ((remote_socket = create_client(destination_host, destination_port)) == -1) {
+		perror("create_client");
+		return 0;
+	}
 
-	if(!SSL_get_peer_certificate(remote_ssl)){
+	if ((ssl = tls_session_active(remote_socket, tls_context)) == NULL){
+		perror("tls_session_active");
+		return 0;
+	}
+
+	if (SSL_get_peer_certificate(ssl) == NULL){
 		perror("SSL_get_peer_certificate");
 		return 0;
 	}
 
-	if(SSL_get_verify_result(remote_ssl)){
+	if (SSL_get_verify_result(ssl) != X509_V_OK){
 		perror("SSL_get_verify_result");
 		return 0;
 	}
 
-	forward_connection(remote_socket, remote_ssl,client_socket);
+	if((result = forward_connection(remote_socket, ssl, client_socket)) == 0){
+		perror("forward_connection");
+		return 0;
+	}
 
-	SSL_shutdown(remote_ssl);
-	SSL_free(remote_ssl);
+	SSL_shutdown(ssl);
+	SSL_free(ssl);
+
 	close(remote_socket);
 
 	return 1;
@@ -194,20 +203,30 @@ int handle_client_encrypt(int client_socket) {
 }
 
 int handle_client_decrypt(int client_socket) {
+	int remote_socket;
+	SSL *ssl;
+	int result;
 
-	int remote_socket = create_client(destination_host, destination_port);
+	if ((remote_socket = create_client(destination_host, destination_port)) == -1) {
+		perror("create_client");
+		return 0;
+	}
 
-	SSL *ssl = tls_session_passive(client_socket, tls_context);	//create ssl box
+	if ((ssl = tls_session_passive(client_socket, tls_context)) == NULL){
+		perror("tls_session_active");
+		return 0;
+	}
 
-	if(!forward_connection(client_socket, ssl, remote_socket)){
-		perror("Forward");
+	if((result = forward_connection(remote_socket, ssl, client_socket)) == 0){
+		perror("forward_connection");
 		return 0;
 	}
 
 	SSL_shutdown(ssl);
 	SSL_free(ssl);
+
 	close(remote_socket);
-	
+
 	return 1;
 }
 
@@ -222,15 +241,14 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 	while(1){
 		FD_ZERO(&descriptor_set);
 
+		FD_SET(0, &descriptor_set);
 		FD_SET(protected_socket, &descriptor_set);
 		FD_SET(unprotected_socket, &descriptor_set);
-		FD_SET(0, &descriptor_set);
 
 		result = select(MAX(protected_socket,unprotected_socket) + 1, &descriptor_set, NULL, NULL, 0);
 
 		if(result == -1) {
 			perror("select");
-
 			continue;
 		}
 
@@ -239,7 +257,8 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 			nread = SSL_read(protected_ssl, buffer, BUFFER_SIZE -1);
 			if (nread == 0) break;
 			buffer[nread] = '\0';
-			flush_buffer(unprotected_socket, buffer, nread);
+			result = flush_buffer(unprotected_socket, buffer, nread);
+			if ((result = flush_buffer(unprotected_socket, buffer, nread)) == -1) break;
 
 		}
 
@@ -248,19 +267,28 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 			nread = read(unprotected_socket, buffer, BUFFER_SIZE - 1);
 			if (nread == 0) break;
 			buffer[nread] = '\0';
-			flush_buffer_ssl(protected_ssl, buffer, nread);
+			result = flush_buffer_ssl(protected_ssl, buffer, nread);
+			if ((result = flush_buffer_ssl(protected_ssl, buffer, nread)) == -1) break;
+
 		}
 
 		if(FD_ISSET(0, &descriptor_set)) {
 
 			fgets(buffer, BUFFER_SIZE, stdin);
-
 			if(strcmp(buffer, "exit") == 0) break;
-	
 
 		}
 	}
 
+	if (nread == -1){
+		perror("read");
+		return 0;
+	}
+	if (result == -1){
+		perror("flush_buffer");
+		return 0;
+	}
+	
 	return 1;
 }
 
