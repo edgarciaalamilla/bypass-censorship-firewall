@@ -224,6 +224,7 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 
 		FD_SET(protected_socket, &descriptor_set);
 		FD_SET(unprotected_socket, &descriptor_set);
+		FD_SET(0, &descriptor_set);
 
 		result = select(MAX(protected_socket,unprotected_socket) + 1, &descriptor_set, NULL, NULL, 0);
 
@@ -248,6 +249,15 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 			if (nread == 0) break;
 			buffer[nread] = '\0';
 			flush_buffer_ssl(protected_ssl, buffer, nread);
+		}
+
+		if(FD_ISSET(0, &descriptor_set)) {
+
+			fgets(buffer, BUFFER_SIZE, stdin);
+
+			if(strcmp(buffer, "exit") == 0) break;
+	
+
 		}
 	}
 
