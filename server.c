@@ -41,7 +41,6 @@ static SSL_CTX *tls_context;
 
 int main(int argc, char **argv) {
 	int result;
-
 	// Argument parsing
 	if(argc < 4) {
 		fprintf(stderr, "Usage: server [E|D] <local_port> <proxy_host> <proxy_port>\n");
@@ -67,7 +66,6 @@ int main(int argc, char **argv) {
 	destination_host = argv[3];
 	destination_port = argv[4];
 
-	// Using getaddrinfo to obtain the first address to bind to
 	struct addrinfo result_hints;
 	struct addrinfo *result_list;
 
@@ -77,7 +75,6 @@ int main(int argc, char **argv) {
 	result_hints.ai_socktype = SOCK_STREAM;
 	result_hints.ai_flags = AI_PASSIVE;
 
-	//for connections, use local_port
 	result = getaddrinfo(NULL, local_port, &result_hints, &result_list);
 
 	if(result != 0) {
@@ -86,20 +83,16 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	//this is c in Decrypt repeater and a in encrypt repeater
-	// Listening socket creation
 	int listen_socket;
 
 	for(struct addrinfo *result_curr = result_list; result_curr != NULL; result_curr = result_curr->ai_next) {
 		
-		// Listening socket creation
 		listen_socket = socket(result_curr->ai_family, result_curr->ai_socktype, result_curr->ai_protocol);
 
 		if(listen_socket == -1) {
 			continue;
 		}
 
-		// Binding to a local address/port
 		result = bind(listen_socket, result_curr->ai_addr, result_curr->ai_addrlen);
 
 		if(result == -1) {
@@ -120,8 +113,6 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	// Listen for connections to a/c
-
 	result = listen(listen_socket, 5);
 
 	if(result == -1) {
@@ -130,12 +121,9 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	// Prepare the TLS library
-
 	init_openssl_library();
 	tls_context = get_tls_context();
 
-	// Read from client and echo its messages
 	int client_socket;
 	struct sockaddr_storage client_socket_address;
 	socklen_t client_socket_size;
@@ -151,28 +139,22 @@ int main(int argc, char **argv) {
 			return -1;
 		}
 
-		// Read from client and echo its messages
 		print_address_information("Connection from client from [%s] port [%s]\n", (struct sockaddr *) &client_socket_address, client_socket_size);
 
 		int pid = fork();
 
 		if(pid != 0) {
-			// Server executes this
 			close(client_socket);
 		}
 		else {
-			// Client executes this
 			if(mode == MODE_E) {
 				handle_client_encrypt(client_socket);
 			}
 			else {
 				handle_client_decrypt(client_socket);
-
 			}
-
 			close(client_socket);
 
-			// This call is important
 			exit(0);
 		}
 	}
@@ -184,121 +166,91 @@ int handle_client_encrypt(int client_socket) {
 	
 	int remote_socket = create_client(destination_host, destination_port);
 
-	//start https handshake 
 	SSL *remote_ssl = tls_session_active(remote_socket, tls_context);
 
-	//should it be forward_connection(destination_host, ssl, client_socket)?
-	//determine which socket is protected, unprotected
-	forward_connection(client_socket, remote_ssl,remote_socket);
+	// if(!SSL_CTX_load_verify_locations(tls_context, SERV_CERTIFICATE, NULL)){
+	// 	perror("SSL");
+	// 	return 0;
+	// }
+
+	if(!SSL_get_peer_certificate(remote_ssl)){
+		perror("SSL_get_peer_certificate");
+		return 0;
+	}
+
+	if(SSL_get_verify_result(remote_ssl)){
+		perror("SSL_get_verify_result");
+		return 0;
+	}
+
+	forward_connection(remote_socket, remote_ssl,client_socket);
+
 	SSL_shutdown(remote_ssl);
 	SSL_free(remote_ssl);
-	close(client_socket);
 	close(remote_socket);
 
 	return 1;
 
 }
 
-//localport will be 9000 for decrypt
-//will create connection to http proxy
 int handle_client_decrypt(int client_socket) {
 
 	int remote_socket = create_client(destination_host, destination_port);
 
-	//wait for https handshake to complete by calling tls_session_passive() on c socket (localport)
-	int pid = fork();
+	SSL *ssl = tls_session_passive(client_socket, tls_context);	//create ssl box
 
-	if(pid != 0) {
-		//close client_socket
-		close(client_socket);
+	if(!forward_connection(client_socket, ssl, remote_socket)){
+		perror("Forward");
+		return 0;
 	}
 
-	else {
-
-		SSL *ssl = tls_session_passive(client_socket, tls_context);	//create ssl box
-		//pass client socket and tls context to box.
-
-		// Client executes this
-		handle_client(client_socket, ssl);
-
-		forward_connection(client_socket, ssl, remote_socket);
-		SSL_shutdown(ssl);
-		SSL_free(ssl);	//free memory on exit
-		close(client_socket);
-		close(remote_socket);
-
-		exit(0);
-	}
+	SSL_shutdown(ssl);
+	SSL_free(ssl);
+	close(remote_socket);
+	
 	return 1;
 }
 
-//protected is client, unprotected is destination
 int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected_socket) {
 
-	//use select() to forward requests between sockets involved in "E" or "D".
-	//add protected socket and unprotected socket into select() call.
-	//if protected socket is ready for reading use sslread() to read into buffer,
-	//forward to unprotected socket using write();
 	int result;
 	fd_set descriptor_set;
 
+	char buffer[BUFFER_SIZE];
+	int nread;
+
 	while(1){
 		FD_ZERO(&descriptor_set);
-		FD_SET(0, &descriptor_set);
 
-		//not sure if should be protected_socket or unprotected_socket
 		FD_SET(protected_socket, &descriptor_set);
+		FD_SET(unprotected_socket, &descriptor_set);
 
-		result = select(MAX(0,protected_socket) + 1, &descriptor_set, NULL, NULL, 0);
-		
+		result = select(MAX(protected_socket,unprotected_socket) + 1, &descriptor_set, NULL, NULL, 0);
+
 		if(result == -1) {
 			perror("select");
+
 			continue;
 		}
 
-		if(FD_ISSET(0, &descriptor_set)) {
-			fgets(buffer, BUFFER_SIZE, stdin);
-
-			if(strcmp(buffer, "exit") == 0) {
-				break;
-			}
-
-			flush_buffer(remote_socket, buffer, strlen(buffer));
-		}
-
-		//not sure here 
 		if(FD_ISSET(protected_socket, &descriptor_set)) {
-			int nread = SSL_read(protected_socket, buffer, BUFFER_SIZE - 1);
 
-			if(nread == 0) {
-				break;
-			}
-
+			nread = SSL_read(protected_ssl, buffer, BUFFER_SIZE -1);
+			if (nread == 0) break;
 			buffer[nread] = '\0';
-			//write to unprotected_socket here instead of printing.
-			printf("%s", buffer);
+			flush_buffer(unprotected_socket, buffer, nread);
+
 		}
 
-		//not really sure here
 		if(FD_ISSET(unprotected_socket, &descriptor_set)) {
-			int nread = SSL_read(unprotected_socket, buffer, BUFFER_SIZE - 1);
 
-			if(nread == 0) {
-				break;
-			}
-
+			nread = read(unprotected_socket, buffer, BUFFER_SIZE - 1);
+			if (nread == 0) break;
 			buffer[nread] = '\0';
-			//write to unprotected_socket here instead of printing.
-			printf("%s", buffer);
+			flush_buffer_ssl(protected_ssl, buffer, nread);
 		}
-
-
-
-
-
-
-
 	}
+
 	return 1;
 }
 

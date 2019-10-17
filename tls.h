@@ -2,8 +2,10 @@
  * Copyright (c) 2018, Hammurabi Mendes.
  * License: BSD 2-clause
  */
+
 #ifndef TLS_H
 #define TLS_H
+
 
 #include <openssl/ssl.h>
 #include <openssl/bio.h>

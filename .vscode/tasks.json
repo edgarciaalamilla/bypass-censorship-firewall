@@ -1,0 +1,67 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "DebugBuild client",
+            "type": "shell",
+            "command": "gcc -g -I/usr/local/opt/openssl/include -c client.c tls.c && gcc -g -o client -I. -I/usr/local/opt/openssl/include client.o tls.o -L/usr/local/opt/openssl/lib -lcrypto -lssl",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "focus": true,
+                "echo": true,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "DebugBuild server",
+            "type": "shell",
+            "command": "gcc -g -I/usr/local/opt/openssl/include -c networking.c server.c tls.c && gcc -g -o server -I. -I/usr/local/opt/openssl/include networking.o server.o tls.o -L/usr/local/opt/openssl/lib -lcrypto -lssl",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "focus": true,
+                "echo": true,
+                "panel": "shared"
+            }
+        }
+    ]
+}

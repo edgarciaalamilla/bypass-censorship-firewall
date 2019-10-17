@@ -191,7 +191,6 @@ int create_client(char *destination, char *port) {
 		return -1;
 	}
 
-	
 	return remote_socket;
 
 }
