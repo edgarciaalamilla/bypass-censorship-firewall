@@ -197,7 +197,7 @@ int handle_client_encrypt(int client_socket) {
 	SSL_free(ssl);
 
 	close(remote_socket);
-
+	exit(0);
 	return 1;
 
 }
@@ -257,7 +257,7 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 			nread = SSL_read(protected_ssl, buffer, BUFFER_SIZE -1);
 			if (nread == 0) break;
 			buffer[nread] = '\0';
-			result = flush_buffer(unprotected_socket, buffer, nread);
+			// result = flush_buffer(unprotected_socket, buffer, nread);
 			if ((result = flush_buffer(unprotected_socket, buffer, nread)) == -1) break;
 
 		}
@@ -267,7 +267,7 @@ int forward_connection(int protected_socket, SSL *protected_ssl, int unprotected
 			nread = read(unprotected_socket, buffer, BUFFER_SIZE - 1);
 			if (nread == 0) break;
 			buffer[nread] = '\0';
-			result = flush_buffer_ssl(protected_ssl, buffer, nread);
+			// result = flush_buffer_ssl(protected_ssl, buffer, nread);
 			if ((result = flush_buffer_ssl(protected_ssl, buffer, nread)) == -1) break;
 
 		}
